@@ -67,7 +67,7 @@ func (d *downloader) DownloadAsset(ctx context.Context, assets []release.Asset) 
 	// iterate through the assets and find the one that matches the os and arch
 	suffix := d.os + "_" + d.arch
 	for _, asset := range assets {
-		if strings.HasSuffix(asset.BrowserDownloadURL, suffix) {
+		if strings.HasSuffix(strings.ToLower(asset.BrowserDownloadURL), suffix) {
 			return d.downloadAsset(ctx, asset.BrowserDownloadURL)
 		}
 	}
