@@ -184,7 +184,7 @@ func unTarGz(prefix string, r io.Reader) (string, error) {
 // unTar unarchives a .tar file.
 func unTar(prefix string, r io.Reader) (string, error) {
 	tarr := tar.NewReader(r)
-	out, err := os.CreateTemp("", "/tmp/"+prefix+"-*")
+	out, err := os.CreateTemp("", prefix)
 	if err != nil {
 		return "", fmt.Errorf("failed to create temp file: %w", err)
 	}
@@ -235,7 +235,7 @@ func unZip(prefix string, r io.ReaderAt) (string, error) {
 			return "", fmt.Errorf("failed to open file: %w", err)
 		}
 		defer rc.Close()
-		out, err := os.CreateTemp("", "/tmp/"+prefix+"-*")
+		out, err := os.CreateTemp("", prefix)
 		if err != nil {
 			return "", fmt.Errorf("failed to create temp file: %w", err)
 		}
@@ -264,7 +264,7 @@ func unGz(prefix string, r io.Reader) (string, error) {
 	}
 	defer gzr.Close()
 
-	out, err := os.CreateTemp("", "/tmp/"+prefix+"-*")
+	out, err := os.CreateTemp("", prefix)
 	if err != nil {
 		return "", fmt.Errorf("failed to create temp file: %w", err)
 	}
