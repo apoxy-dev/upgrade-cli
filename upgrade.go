@@ -136,7 +136,7 @@ func (u *upgrader) Upgrade(ctx context.Context, currentVersion string) error {
 		return ErrInvalidCheckSum
 	}
 
-	tempFile, err := tryUnArchive(executableName, downloadInfo.DownloadedBinaryFilePath)
+	tempFile, err := tryUnArchive(executableName, downloadInfo.DownloadedBinaryFilePath, downloadInfo.ArSuffix)
 	if err != nil {
 		return fmt.Errorf("failed to unarchive: %w", err)
 	}
@@ -150,12 +150,12 @@ func (u *upgrader) Upgrade(ctx context.Context, currentVersion string) error {
 }
 
 // tryUnArchive unarchives the downloaded update and returns the path to the unarchived temp file.
-func tryUnArchive(prefix, arPath string) (string, error) {
+func tryUnArchive(prefix, arPath, arSuffix string) (string, error) {
 	f, err := os.Open(arPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to open file: %w", err)
 	}
-	switch filepath.Ext(arPath) {
+	switch arSuffix {
 	case ".tar.gz":
 		return unTarGz(prefix, f)
 	case ".zip":
@@ -175,7 +175,7 @@ func tryUnArchive(prefix, arPath string) (string, error) {
 func unTarGz(prefix string, r io.Reader) (string, error) {
 	gzr, err := gzip.NewReader(r)
 	if err != nil {
-		return "", fmt.Errorf("failed to create gzip reader: %w", err)
+		return "", fmt.Errorf("failed to read gzip: %w", err)
 	}
 	defer gzr.Close()
 	return unTar(prefix, gzr)

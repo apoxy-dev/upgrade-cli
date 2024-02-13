@@ -25,6 +25,8 @@ type Downloader interface {
 type Info struct {
 	Checksum                 string
 	DownloadedBinaryFilePath string
+	PlatformSuffix           string
+	ArSuffix                 string
 }
 
 type downloader struct {
@@ -71,12 +73,26 @@ func (d *downloader) DownloadAsset(ctx context.Context, assets []release.Asset) 
 		// Remove .tar.gz .tar .zip .gz from the end of the string
 		// and compare the suffix
 		// e.g. linux_amd64.tar.gz -> linux_amd64
+		var ar string
 		for _, s := range []string{".tar.gz", ".tar", ".zip", ".gz"} {
-			u = strings.TrimSuffix(u, s)
+			t := strings.TrimSuffix(u, s)
+			if t != u {
+				ar = s
+				u = t
+				break
+			}
 		}
 
 		if strings.HasSuffix(u, suffix) {
-			return d.downloadAsset(ctx, asset.BrowserDownloadURL)
+			info, c, err := d.downloadAsset(ctx, asset.BrowserDownloadURL)
+			if err != nil {
+				return nil, nil, err
+			}
+
+			info.PlatformSuffix = suffix
+			info.ArSuffix = ar
+
+			return info, c, nil
 		}
 	}
 	return nil, nil, fmt.Errorf("%w: os:%s arch:%s", ErrNoAsset, d.os, d.arch)
