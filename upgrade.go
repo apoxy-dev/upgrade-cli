@@ -1,11 +1,16 @@
 package upgrade
 
 import (
+	"archive/tar"
+	"archive/zip"
+	"compress/gzip"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/getsavvyinc/upgrade-cli/checksum"
 	"github.com/getsavvyinc/upgrade-cli/release"
@@ -131,11 +136,149 @@ func (u *upgrader) Upgrade(ctx context.Context, currentVersion string) error {
 		return ErrInvalidCheckSum
 	}
 
-	if err := replaceBinary(downloadInfo.DownloadedBinaryFilePath, u.executablePath); err != nil {
+	tempFile, err := tryUnArchive(executableName, downloadInfo.DownloadedBinaryFilePath)
+	if err != nil {
+		return fmt.Errorf("failed to unarchive: %w", err)
+	}
+	defer os.Remove(tempFile)
+
+	if err := replaceBinary(tempFile, u.executablePath); err != nil {
 		return fmt.Errorf("failed to replace binary: %w", err)
 	}
 
 	return nil
+}
+
+// tryUnArchive unarchives the downloaded update and returns the path to the unarchived temp file.
+func tryUnArchive(prefix, arPath string) (string, error) {
+	f, err := os.Open(arPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to open file: %w", err)
+	}
+	switch filepath.Ext(arPath) {
+	case ".tar.gz":
+		return unTarGz(prefix, f)
+	case ".zip":
+		return unZip(prefix, f)
+	case ".tar":
+		return unTar(prefix, f)
+	case ".gz":
+		return unGz(prefix, f)
+	case "": // no extension - assume it's a binary
+		return arPath, nil
+	default:
+		return "", fmt.Errorf("unsupported file type: %s", filepath.Ext(arPath))
+	}
+}
+
+// unTarGz unarchives a .tar.gz file.
+func unTarGz(prefix string, r io.Reader) (string, error) {
+	gzr, err := gzip.NewReader(r)
+	if err != nil {
+		return "", fmt.Errorf("failed to create gzip reader: %w", err)
+	}
+	defer gzr.Close()
+	return unTar(prefix, gzr)
+}
+
+// unTar unarchives a .tar file.
+func unTar(prefix string, r io.Reader) (string, error) {
+	tarr := tar.NewReader(r)
+	out, err := os.CreateTemp("", "/tmp/"+prefix+"-*")
+	if err != nil {
+		return "", fmt.Errorf("failed to create temp file: %w", err)
+	}
+	defer out.Close()
+
+	for {
+		hdr, err := tarr.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return "", fmt.Errorf("failed to read next header: %w", err)
+		}
+		if hdr.Typeflag != tar.TypeReg {
+			continue
+		}
+		if !strings.HasPrefix(filepath.Base(hdr.Name), prefix) {
+			continue
+		}
+
+		if _, err := io.Copy(out, tarr); err != nil {
+			return "", fmt.Errorf("failed to copy file: %w", err)
+		}
+
+		if err := os.Chmod(out.Name(), 0755); err != nil {
+			return "", fmt.Errorf("failed to change file permissions: %w", err)
+		}
+
+		return out.Name(), nil
+	}
+
+	return "", fmt.Errorf("file not found in archive")
+}
+
+// unZip unarchives a .zip file.
+func unZip(prefix string, r io.ReaderAt) (string, error) {
+	zr, err := zip.NewReader(r, 0)
+	if err != nil {
+		return "", fmt.Errorf("failed to create zip reader: %w", err)
+	}
+	for _, f := range zr.File {
+		if !strings.HasPrefix(filepath.Base(f.Name), prefix) {
+			continue
+		}
+
+		rc, err := f.Open()
+		if err != nil {
+			return "", fmt.Errorf("failed to open file: %w", err)
+		}
+		defer rc.Close()
+		out, err := os.CreateTemp("", "/tmp/"+prefix+"-*")
+		if err != nil {
+			return "", fmt.Errorf("failed to create temp file: %w", err)
+		}
+		defer out.Close()
+
+		if _, err := io.Copy(out, rc); err != nil {
+			return "", fmt.Errorf("failed to copy file: %w", err)
+		}
+
+		if err := os.Chmod(out.Name(), 0755); err != nil {
+			return "", fmt.Errorf("failed to change file permissions: %w", err)
+		}
+
+		return out.Name(), nil
+	}
+
+	return "", fmt.Errorf("no file found with prefix: %s", prefix)
+}
+
+// unGz unarchives a .gz file.
+// It returns the path to the unarchived temp file.
+func unGz(prefix string, r io.Reader) (string, error) {
+	gzr, err := gzip.NewReader(r)
+	if err != nil {
+		return "", fmt.Errorf("failed to create gzip reader: %w", err)
+	}
+	defer gzr.Close()
+
+	out, err := os.CreateTemp("", "/tmp/"+prefix+"-*")
+	if err != nil {
+		return "", fmt.Errorf("failed to create temp file: %w", err)
+	}
+	defer out.Close()
+
+	if _, err := io.Copy(out, gzr); err != nil {
+		return "", fmt.Errorf("failed to copy file: %w", err)
+	}
+
+	if err := os.Chmod(out.Name(), 0755); err != nil {
+		return "", fmt.Errorf("failed to change file permissions: %w", err)
+	}
+
+	return out.Name(), nil
 }
 
 // replaceBinary replaces the current executable with the downloaded update.

@@ -88,7 +88,7 @@ func downloadCheckSum(ctx context.Context, url string) (*Info, error) {
 		if len(parts) != 2 {
 			return nil, fmt.Errorf("%w: checksum file is malformed", ErrInvalidChecksumFile)
 		}
-		checksums[parts[1]] = parts[0]
+		checksums[strings.ToLower(parts[1])] = strings.ToLower(parts[0])
 	}
 
 	if len(checksums) == 0 {
